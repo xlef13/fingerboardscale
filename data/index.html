@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>KRAFT</title>
+    <style>
+      
+        #chart {
+      max-width: 1200px;
+	  max-height: 800px;
+      margin: 35px auto;
+    }
+      
+    </style>
+
+    <script>
+      window.Promise ||
+        document.write(
+          '<script src="https://cdn.jsdelivr.net/npm/promise-polyfill@8/dist/polyfill.min.js"><\/script>'
+        )
+      window.Promise ||
+        document.write(
+          '<script src="https://cdn.jsdelivr.net/npm/eligrey-classlist-js-polyfill@1.2.20171210/classList.min.js"><\/script>'
+        )
+      window.Promise ||
+        document.write(
+          '<script src="https://cdn.jsdelivr.net/npm/findindex_polyfill_mdn"><\/script>'
+        )
+    </script>
+
+    
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    
+
+    <script>
+	var lastDate = 0;
+	var data = []
+	var TICKINTERVAL = 1
+	let XAXISRANGE = 60
+	var start = Date.now();
+	var recording = false;
+	var taring = false;
+	var calibrating = false;
+	
+	var offset = 0;
+	var devider = -22829;
+	
+	var connection = new WebSocket('ws://192.168.178.125:49160/', ['arduino']);
+	connection.onopen = function () {  
+		connection.send('Connect ' + new Date()); 
+	}; 
+	connection.onerror = function (error) {   
+		console.log('WebSocket Error ', error);
+	};
+	connection.onmessage = function (e) {  
+		getNewSeries(lastDate, parseFloat(e.data))
+	};
+	
+
+
+	function getNewSeries(baseval, datapoint) {
+		if (taring){
+			offset = -1*(datapoint/devider);
+			taring = false;
+		}
+		if(calibrating){
+			var calibrationfield = document.getElementById('calibrationvalue');
+			devider = datapoint/parseFloat(calibrationfield.value);
+			console.log(devider);
+			calibrating = false;
+		}
+		
+		if (!recording){
+			return;
+		}
+		const millis = Date.now() - start;
+
+		var newDate = Math.floor(millis/100)/10
+		lastDate = newDate
+		datapoint = Math.floor(((datapoint/devider)+offset)*100)/100;
+		data.push({
+		  x: newDate,
+		  y: datapoint
+		})
+	}
+
+	function resetData(){
+		// Alternatively, you can also reset the data at certain intervals to prevent creating a huge series 
+		data = data.slice(data.length - 3000, data.length);
+		
+	}
+	
+	function resetDatatoNull(){
+		// Alternatively, you can also reset the data at certain intervals to prevent creating a huge series 
+		data = [];
+		chart.resetSeries();
+	}
+	
+
+  </script>
+  </head>
+
+  <body>
+    <div id="chart"></div>
+	<button type="button" onclick="record()" id="recordbtn">Record</button>
+	<button type="button" onclick="tare()" id="downloadbtn">Tare</button>
+	<input type="text" id="calibrationvalue" value="5" size="3">
+	<button type="button" onclick="calibrate()" id="downloadbtn">Calibrate</button>
+	<button type="button" onclick="download()" id="downloadbtn">Download</button>
+	
+	<script>
+		function record(){
+			
+			var button = document.getElementById('recordbtn');
+			if(recording){
+				button.firstChild.data = "Record";
+			}else{
+				button.firstChild.data = "Stop";
+				start = Date.now();
+				resetDatatoNull();
+			}
+			recording=!recording;
+		}
+		
+		function tare(){
+			taring = true;
+		}
+		
+		function calibrate(){
+			calibrating = true;
+		}
+		
+		function download(){
+			recording = false;
+			string = ""
+			let csvContent = "data:text/csv;charset=utf-8," 
+				+ data.map(fields => string.concat(String(fields.x), ",",String(fields.y))).join("\n");
+				
+			var encodedUri = encodeURI(csvContent);
+			var link = document.createElement("a");
+			link.setAttribute("href", encodedUri);
+			link.setAttribute("download", "my_data.csv");
+			document.body.appendChild(link); // Required for FF
+
+			link.click();
+		}
+	</script>
+    <script>
+        var options = {
+          series: [{
+          data: data.slice()
+        }],
+          chart: {
+          id: 'realtime',
+          height: 350,
+          type: 'line',
+          animations: {
+            enabled: true,
+            easing: 'linear',
+            dynamicAnimation: {
+              speed: 100
+            }
+          },
+          zoom: {
+            enabled: false
+          }
+        },
+        dataLabels: {
+          enabled: false
+        },
+        stroke: {
+          curve: 'smooth',
+		  width: 1.5
+        },
+        title: {
+          text: 'KRAFT',
+          align: 'left'
+        },
+        markers: {
+          size: 0
+        },
+        xaxis: {
+			type: 'numeric',
+			tickAmount:10,
+			tickPlacement: 'on',
+			range:60,
+			decimalsInFloat: 2,
+        },
+        yaxis: {
+          min: 0,
+        },
+        legend: {
+          show: false
+        },
+		grid: {
+			position: 'front'
+		}
+        };
+
+        var chart = new ApexCharts(document.querySelector("#chart"), options);
+        chart.render();
+      
+      
+
+		window.setInterval(function () {
+			chart.updateSeries([{
+				data: data
+			}])
+		}, 100 ) ;
+		
+		
+		window.setInterval(function () {
+		
+			if(Date.now() - start == 60*1000*10 && recording){
+				record();
+			}
+				
+		}, 15000)
+      
+    </script>
+
+    
+  </body>
+</html>
